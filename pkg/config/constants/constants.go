@@ -128,10 +128,8 @@ const (
 
 	// InternalParentNames declares the original resources of an internally-generated config.
 	// This is used by k8s gateway-api.
-	// It is a comma separated list. For example, "HTTPRoute/foo.
-	InternalParentNames = "internal.istio.io/parents"
-	// InternalParentNamespace contains, for internally-generated resource, the namespace of the parent, if different then current.
-	InternalParentNamespace       = "internal.istio.io/parent-namespace"
+	// It is a comma separated list. For example, "HTTPRoute/foo.default,HTTPRoute/bar.default"
+	InternalParentNames           = "internal.istio.io/parents"
 	InternalRouteSemantics        = "internal.istio.io/route-semantics"
 	RouteSemanticsIngress         = "ingress"
 	RouteSemanticsGateway         = "gateway"
@@ -139,7 +137,6 @@ const (
 	GatewaySemanticsGateway       = "gateway"
 	InternalServiceSemantics      = "internal.istio.io/service-semantics"
 	ServiceSemanticsInferencePool = "inferencepool"
-
 	// ThirdPartyJwtPath is the default 3P token to authenticate with third party services
 	ThirdPartyJwtPath = "./var/run/secrets/tokens/istio-token"
 
@@ -212,9 +209,4 @@ const (
 	EnvoySubsetNamespace string = "envoy.lb"
 	// The metadata key used for endpoint selection. This key is set from the InferencePool EPP (Endpoint Picker)
 	GatewayInferenceExtensionEndpointHintKey string = "x-gateway-destination-endpoint"
-
-	// config.Config.Extra well-known key values
-
-	// TODO: think about a better name?
-	ConfigExtraPerRouteRuleInferencePoolConfigs = "perRouteRuleInferencePoolConfigs"
 )

@@ -228,6 +228,9 @@ func convertHTTPRoute(ctx RouteContext, r k8s.HTTPRouteRule,
 		if err != nil {
 			return nil, nil, err
 		}
+		if ipCfg != nil && ipCfg.enableExtProc {
+			vs.Name = "%%" + ipCfg.endpointPickerDst + "%%" + ipCfg.endpointPickerPort + "%%" + vs.Name
+		}
 		vs.Route = route
 		return vs, ipCfg, joinErrors(backendErr, mirrorBackendErr)
 	}
@@ -1011,20 +1014,18 @@ func buildGRPCDestination(
 }
 
 type inferencePoolConfig struct {
-	enableExtProc             bool
-	endpointPickerDst         string
-	endpointPickerPort        string
-	endpointPickerFailureMode string
+	enableExtProc      bool
+	endpointPickerDst  string
+	endpointPickerPort string
 }
 
 func buildDestination(ctx RouteContext, to k8s.BackendRef, ns string,
 	enforceRefGrant bool, k config.GroupVersionKind,
 ) (*istio.Destination, *inferencePoolConfig, *ConfigError) {
-	ref := normalizeReference(to.Group, to.Kind, gvk.Service)
 	// check if the reference is allowed
 	if enforceRefGrant {
 		if toNs := to.Namespace; toNs != nil && string(*toNs) != ns {
-			if !ctx.Grants.BackendAllowed(ctx.Krt, k, ref, to.Name, *toNs, ns) {
+			if !ctx.Grants.BackendAllowed(ctx.Krt, k, to.Name, *toNs, ns) {
 				return &istio.Destination{}, nil, &ConfigError{
 					Reason:  InvalidDestinationPermit,
 					Message: fmt.Sprintf("backendRef %v/%v not accessible to a %s in namespace %q (missing a ReferenceGrant?)", to.Name, *toNs, k.Kind, ns),
@@ -1069,49 +1070,34 @@ func buildDestination(ctx RouteContext, to k8s.BackendRef, ns string,
 			invalidBackendErr = &ConfigError{Reason: InvalidDestinationNotFound, Message: fmt.Sprintf("backend(%s) not found", hostname)}
 		}
 	case gvk.InferencePool:
-		if !features.SupportGatewayAPIInferenceExtension {
-			return nil, nil, &ConfigError{
-				Reason:  InvalidDestinationKind,
-				Message: "InferencePool is not enabled. To enable, set SUPPORT_GATEWAY_API_INFERENCE_EXTENSION to true in istiod",
-			}
-		}
-		if strings.Contains(string(to.Name), ".") {
+		if !features.SupportGatewayAPIInferenceExtension || strings.Contains(string(to.Name), ".") {
 			return nil, nil, &ConfigError{
 				Reason:  InvalidDestination,
 				Message: "InferencePool.Name invalid; the name of the InferencePool must be used, not the hostname.",
 			}
-		}
-		infPool := ptr.Flatten(krt.FetchOne(ctx.Krt, ctx.InferencePools, krt.FilterKey(namespace+"/"+string(to.Name))))
-		if infPool == nil {
-			// Inference pool doesn't exist
-			invalidBackendErr = &ConfigError{Reason: InvalidDestinationNotFound, Message: fmt.Sprintf("backend(%s) not found", to.Name)}
-			return &istio.Destination{}, nil, invalidBackendErr
 		}
 		inferencePoolServiceName, _ := InferencePoolServiceName(string(to.Name))
 		hostname := fmt.Sprintf("%s.%s.svc.%s", inferencePoolServiceName, namespace, ctx.DomainSuffix)
 		svc := ctx.LookupHostname(hostname, namespace)
 		if svc == nil {
 			invalidBackendErr = &ConfigError{Reason: InvalidDestinationNotFound, Message: fmt.Sprintf("backend(%s) not found", hostname)}
-			return &istio.Destination{}, nil, invalidBackendErr
+			return nil, nil, invalidBackendErr
 		}
 		if svc.Attributes.Labels == nil {
 			invalidBackendErr = &ConfigError{Reason: InvalidDestination, Message: "InferencePool service invalid, extensionRef labels not found"}
-			return &istio.Destination{}, nil, invalidBackendErr
+			return nil, nil, invalidBackendErr
 		}
 
 		ipCfg := &inferencePoolConfig{
 			enableExtProc: true,
 		}
 		if dst, ok := svc.Attributes.Labels[InferencePoolExtensionRefSvc]; ok {
-			ipCfg.endpointPickerDst = fmt.Sprintf("%s.%s.svc.%s", dst, infPool.Namespace, ctx.DomainSuffix)
+			ipCfg.endpointPickerDst = dst
 		}
 		if p, ok := svc.Attributes.Labels[InferencePoolExtensionRefPort]; ok {
 			ipCfg.endpointPickerPort = p
 		}
-		if fm, ok := svc.Attributes.Labels[InferencePoolExtensionRefFailureMode]; ok {
-			ipCfg.endpointPickerFailureMode = fm
-		}
-		if ipCfg.endpointPickerDst == "" || ipCfg.endpointPickerPort == "" || ipCfg.endpointPickerFailureMode == "" {
+		if ipCfg.endpointPickerDst == "" || ipCfg.endpointPickerPort == "" {
 			invalidBackendErr = &ConfigError{Reason: InvalidDestination, Message: "InferencePool service invalid, extensionRef labels not found"}
 		}
 		return &istio.Destination{

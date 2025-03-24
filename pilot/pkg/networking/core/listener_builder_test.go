@@ -990,15 +990,8 @@ func TestAdditionalAddressesForIPv6(t *testing.T) {
 
 func TestExtProcExistForInfernecePoolEnabledGateway(t *testing.T) {
 	test.SetForTest(t, &features.SupportGatewayAPIInferenceExtension, true)
-
-	cg := NewConfigGenTest(t, TestOptions{
-		Services: testServices,
-	})
-	proxy := cg.SetupProxy(&model.Proxy{Labels: map[string]string{"gateway.networking.k8s.io/gateway-name": "foo-gateway"}, ConfigNamespace: "not-default"})
-	fakeGatewayController := model.FakeController{
-		GatewaysWithInferencePools: sets.New(types.NamespacedName{Name: "foo-gateway", Namespace: "not-default"}),
-	}
-	cg.env.PushContext().GatewayAPIController = fakeGatewayController
+	cg := NewConfigGenTest(t, TestOptions{Services: testServices})
+	proxy := cg.SetupProxy(&model.Proxy{Labels: map[string]string{"istio.io/enable-inference-extproc": "true"}, ConfigNamespace: "not-default"})
 
 	lstnrs := cg.Listeners(proxy)
 	vo := xdstest.ExtractListener("0.0.0.0_8080", lstnrs)

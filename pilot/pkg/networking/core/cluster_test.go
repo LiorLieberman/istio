@@ -311,18 +311,17 @@ func TestBuildClustersForInferencePoolServices(t *testing.T) {
 	}{
 		// Add testcase for inbound clusters as well?
 		{
-			testName:             "InferencePool service should have override_host load_balancing policy",
+			testName:             "InferencePool service should have lb_subset_config with the right selector",
 			clusterName:          "outbound|8080||*.example.org",
 			proxyType:            model.Router,
 			InferencePoolService: true,
 		},
 		{
-			testName:             "Regular service should NOT have override_host load_balancing policy",
+			testName:             "Regular service should NOT have lb_subset_config",
 			clusterName:          "outbound|8080||*.example.org",
 			proxyType:            model.Router,
 			InferencePoolService: false,
 		},
-		// TODO(liorlieberman) change this once we make it work for sidecars as well
 		{
 			testName:             "Sidecar proxy should not have config",
 			clusterName:          "outbound|8080||*.example.org",
@@ -343,25 +342,11 @@ func TestBuildClustersForInferencePoolServices(t *testing.T) {
 			})
 			c := xdstest.ExtractCluster("outbound|8080||*.example.org", clusters)
 			if !tc.InferencePoolService || tc.InferencePoolService && tc.proxyType != model.Router {
-				if c.GetLoadBalancingPolicy() != nil && c.GetLoadBalancingPolicy().GetPolicies() != nil {
-					g.Expect(c.GetLoadBalancingPolicy().GetPolicies()).To(Not(ContainElement(
-						MatchFields(IgnoreExtras, Fields{
-							"TypedExtensionConfig": MatchFields(IgnoreExtras, Fields{
-								"Name": Equal("envoy.load_balancing_policies.override_host"),
-							}),
-						}),
-					)))
-				}
+				g.Expect(c.LbSubsetConfig).To(BeNil())
 			} else if tc.InferencePoolService {
-				g.Expect(c.LoadBalancingPolicy).NotTo(BeNil())
-				g.Expect(c.LoadBalancingPolicy.Policies).NotTo(BeEmpty())
-				overrideHostPolicy := new(overridehost.OverrideHost)
-				if err := c.LoadBalancingPolicy.Policies[0].GetTypedExtensionConfig().GetTypedConfig().UnmarshalTo(overrideHostPolicy); err != nil {
-					t.Errorf("couldn't unmarshal overrideHost proto: %v \n", err)
-				}
-				g.Expect(overrideHostPolicy.GetOverrideHostSources()).NotTo(BeEmpty())
-				g.Expect(overrideHostPolicy.GetOverrideHostSources()[0].GetMetadata().GetKey()).To(Equal("envoy.lb"))
-				g.Expect(overrideHostPolicy.GetOverrideHostSources()[0].GetMetadata().GetPath()[0].GetKey()).To(Equal("x-gateway-destination-endpoint"))
+				g.Expect(c.LbSubsetConfig).NotTo(BeNil())
+				g.Expect(c.LbSubsetConfig.SubsetSelectors).NotTo(BeEmpty())
+				g.Expect(c.LbSubsetConfig.SubsetSelectors[0].Keys).To(Equal([]string{"x-gateway-destination-endpoint"}))
 			}
 		})
 	}

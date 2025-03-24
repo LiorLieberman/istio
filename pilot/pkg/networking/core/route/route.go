@@ -247,7 +247,7 @@ func buildSidecarVirtualHostsForVirtualService(
 ) []VirtualHostWrapper {
 	meshGateway := sets.New(constants.IstioMeshGateway)
 
-	infPoolConfigs := CheckAndGetInferencePoolConfigs(virtualService)
+	infPoolConfig := CheckAndGetInferencePoolConfig(virtualService)
 
 	opts := RouteOptions{
 		// Sidecar is never terminating TLS
@@ -262,7 +262,7 @@ func buildSidecarVirtualHostsForVirtualService(
 		LookupHash: func(destination *networking.HTTPRouteDestination) *networking.LoadBalancerSettings_ConsistentHashLB {
 			return hashByDestination[destination]
 		},
-		InferencePoolExtensionRefs: infPoolConfigs,
+		InferencePoolExtensionRef: infPoolConfig,
 	}
 
 	routes, err := BuildHTTPRoutesForVirtualService(node, virtualService,
@@ -382,7 +382,7 @@ type RouteOptions struct {
 	LookupDestinationCluster  func(destination *networking.Destination, service *model.Service, listenerPort int) string
 	LookupHash                func(*networking.HTTPRouteDestination) *networking.LoadBalancerSettings_ConsistentHashLB
 
-	InferencePoolExtensionRefs map[string]kube.InferencePoolRouteRuleConfig
+	InferencePoolExtensionRef string
 }
 
 // BuildHTTPRoutesForVirtualService creates data plane HTTP routes from the virtual service spec.
@@ -507,31 +507,26 @@ func TranslateRoute(
 	}
 
 	var hostnames []host.Name
-	if infPoolRouteRuleCfg, ok := opts.InferencePoolExtensionRefs[in.Name]; ok {
-		// This route has an inference pool config, set up ext_proc
-		extSvcHost := host.Name(infPoolRouteRuleCfg.FQDN)
-		extPortNum, _ := strconv.Atoi(infPoolRouteRuleCfg.Port)
+	if opts.InferencePoolExtensionRef != "" {
+		extSvc, extPort := strings.Split(opts.InferencePoolExtensionRef, ":")[0], strings.Split(opts.InferencePoolExtensionRef, ":")[1]
+		p, _ := strconv.ParseInt(extPort, 10, 32)
 		if out.TypedPerFilterConfig == nil {
 			out.TypedPerFilterConfig = make(map[string]*anypb.Any)
 		}
 		out.TypedPerFilterConfig[wellknown.HTTPExternalProcessing] = protoconv.MessageToAny(&extproc.ExtProcPerRoute{
 			Override: &extproc.ExtProcPerRoute_Overrides{
 				Overrides: &extproc.ExtProcOverrides{
-					FailureModeAllow: &wrapperspb.BoolValue{Value: infPoolRouteRuleCfg.FailureModeAllow},
 					GrpcService: &core.GrpcService{
 						TargetSpecifier: &core.GrpcService_EnvoyGrpc_{
 							EnvoyGrpc: &core.GrpcService_EnvoyGrpc{
-								ClusterName: model.BuildSubsetKey(model.TrafficDirectionOutbound, "", extSvcHost, extPortNum),
+								ClusterName: model.BuildSubsetKey(model.TrafficDirectionOutbound, "", host.Name(extSvc), int(p)),
 							},
 						},
 					},
 					ProcessingMode: &extproc.ProcessingMode{
 						RequestHeaderMode: extproc.ProcessingMode_SEND,
 						// open AI standard includes the model and other information the ext_proc server needs in the request body
-						RequestBodyMode:    extproc.ProcessingMode_FULL_DUPLEX_STREAMED,
-						ResponseHeaderMode: extproc.ProcessingMode_SEND,
-						// GIE collects statistics present in the open AI standard response message
-						ResponseBodyMode: extproc.ProcessingMode_FULL_DUPLEX_STREAMED,
+						RequestBodyMode: extproc.ProcessingMode_BUFFERED,
 					},
 				},
 			},
@@ -1631,13 +1626,16 @@ func cutPrefix(s, prefix string) (after string, found bool) {
 	return s[len(prefix):], true
 }
 
-// CheckAndGetInferencePoolConfigs extracts inference pool configurations from a VirtualService's Extra field.
-// The expected structure in Extra is map[string]model.InferencePoolRouteRuleConfig.
-func CheckAndGetInferencePoolConfigs(virtualService config.Config) map[string]kube.InferencePoolRouteRuleConfig {
-	if virtualService.Extra != nil {
-		if infPoolConfigs, ok := virtualService.Extra[constants.ConfigExtraPerRouteRuleInferencePoolConfigs].(map[string]kube.InferencePoolRouteRuleConfig); ok {
-			return infPoolConfigs
+func CheckAndGetInferencePoolConfig(virtualService config.Config) string {
+	vs := virtualService.Spec.(*networking.VirtualService)
+	var infPoolConfig string
+	for _, httpRoute := range vs.Http {
+		routeNameParts := strings.Split(httpRoute.Name, "%%")
+		if len(routeNameParts) > 1 {
+			// TODO(liorlieberman): support configurable domain names
+			fqdn := fmt.Sprintf("%s.%s.svc.%s", routeNameParts[1], virtualService.Namespace, "cluster.local")
+			infPoolConfig = fqdn + ":" + routeNameParts[2]
 		}
 	}
-	return nil
+	return infPoolConfig
 }

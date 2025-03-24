@@ -48,6 +48,7 @@ import (
 	"istio.io/istio/pkg/config/host"
 	"istio.io/istio/pkg/log"
 	"istio.io/istio/pkg/security"
+	"istio.io/istio/pkg/slices"
 	"istio.io/istio/pkg/util/sets"
 	"istio.io/istio/pkg/wellknown"
 )
@@ -179,64 +180,31 @@ func newClusterWrapper(cluster *cluster.Cluster) *clusterWrapper {
 	}
 }
 
-func (cb *ClusterBuilder) applyOverrideHostPolicy(cw *clusterWrapper) {
-	// `locality_weighted_lb_config` is not compatible with
-	// `load_balancing_policy`.
-	if cw.cluster.GetCommonLbConfig() != nil && cw.cluster.GetCommonLbConfig().GetLocalityWeightedLbConfig() != nil {
-		cw.cluster.GetCommonLbConfig().LocalityConfigSpecifier = nil
+func (cb *ClusterBuilder) applyLbSubsetConfig(cw *clusterWrapper, subsetSelectorKey string) {
+	// TODO(liorlieberman) handle a case where subsetConfig already exist?
+	if cw.cluster.LbSubsetConfig == nil {
+		cw.cluster.LbSubsetConfig = &cluster.Cluster_LbSubsetConfig{}
+	}
+	cw.cluster.LbSubsetConfig.FallbackPolicy = cluster.Cluster_LbSubsetConfig_ANY_ENDPOINT
+	if len(cw.cluster.LbSubsetConfig.SubsetSelectors) == 0 {
+		cw.cluster.LbSubsetConfig.SubsetSelectors = []*cluster.Cluster_LbSubsetConfig_LbSubsetSelector{}
 	}
 
-	// `LOAD_BALANCING_POLICY_CONFIG` is technically deprecated, but `lb_policy`
-	// is an Enum, with `ROUND_ROBIN` as the default value, so to avoid any
-	// confusion, we're explicitly setting it.
-	cw.cluster.LbPolicy = cluster.Cluster_CLUSTER_PROVIDED
-
-	// TODO(liorlieberman) move this art somewhere else potentially.
-	// completely override any previously selected LB Policy
-	if cw.cluster.GetLoadBalancingPolicy() == nil {
-		cw.cluster.LoadBalancingPolicy = &cluster.LoadBalancingPolicy{Policies: []*cluster.LoadBalancingPolicy_Policy{}}
+	// TODO(liorlieberman) think about this logic - should we handle a case where subsetSelectors already exist
+	// and do we put the selector needed for inference before?
+	// TODO(liorlieberman) Maybe this function should be more Inference related and not generic "applySubsetConfig"?
+	addKey := true
+	for _, ss := range cw.cluster.LbSubsetConfig.SubsetSelectors {
+		if slices.Contains(ss.Keys, subsetSelectorKey) {
+			addKey = false
+		}
 	}
-	cw.cluster.LoadBalancingPolicy.Policies = []*cluster.LoadBalancingPolicy_Policy{
-		{
-			TypedExtensionConfig: &core.TypedExtensionConfig{
-				Name: wellknown.EnvoyOverrideHostLbPolicy,
-				TypedConfig: protoconv.MessageToAny(&overridehost.OverrideHost{
-					// A list of sources to get host addresses from. The host sources are searched in the order
-					// specified. The request is forwarded to the first address and subsequent addresses are used
-					// for request retries or hedging.
-					//
-					// Note that if an overridden host address is not present in the current endpoint set, it is
-					// skipped and the next found address is used. If there are not enough overridden addresses to
-					// satisfy all retry attempts the fallback load balancing policy is used to pick a host.
-					OverrideHostSources: []*overridehost.OverrideHost_OverrideHostSource{
-						{
-							Metadata: &metadatav3.MetadataKey{
-								Key: constants.EnvoySubsetNamespace,
-								Path: []*metadatav3.MetadataKey_PathSegment{
-									{
-										Segment: &metadatav3.MetadataKey_PathSegment_Key{
-											Key: constants.GatewayInferenceExtensionEndpointHintKey,
-										},
-									},
-								},
-							},
-						},
-					},
-					// The fallback LB policy is triggered in case neither header nor metadata with selected
-					// hosts is present or there were not enough endpoints to satisfy all retry attempts.
-					FallbackPolicy: &cluster.LoadBalancingPolicy{
-						Policies: []*cluster.LoadBalancingPolicy_Policy{
-							{
-								TypedExtensionConfig: &core.TypedExtensionConfig{
-									Name:        wellknown.EnvoyRoundRobinLbPolicy,
-									TypedConfig: protoconv.MessageToAny(&roundrobin.RoundRobin{}),
-								},
-							},
-						},
-					},
-				}),
+	if addKey {
+		cw.cluster.LbSubsetConfig.SubsetSelectors = append(cw.cluster.LbSubsetConfig.SubsetSelectors, &cluster.Cluster_LbSubsetConfig_LbSubsetSelector{
+			Keys: []string{
+				subsetSelectorKey,
 			},
-		},
+		})
 	}
 }
 

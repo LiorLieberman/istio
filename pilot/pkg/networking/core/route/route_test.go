@@ -1270,9 +1270,7 @@ func TestBuildHTTPRoutes(t *testing.T) {
 		cg := core.NewConfigGenTest(t, core.TestOptions{})
 
 		routeOpts := buildRouteOpts(serviceRegistry, nil)
-		routeOpts.InferencePoolExtensionRefs = map[string]kube.InferencePoolRouteRuleConfig{
-			"routeA": {FQDN: "ext-proc-svc.test-namespace.svc.cluster.local", Port: "9002"},
-		}
+		routeOpts.InferencePoolExtensionRef = "ext-proc-svc.test-namespace.svc.cluster.local:9002"
 		routes, err := route.BuildHTTPRoutesForVirtualService(node(cg), virtualServicePlain, 8080, gatewayNames, routeOpts)
 		xdstest.ValidateRoutes(t, routes)
 		g.Expect(err).NotTo(HaveOccurred())
@@ -1283,36 +1281,8 @@ func TestBuildHTTPRoutes(t *testing.T) {
 		}
 		// nolint lll
 		g.Expect(extProcPerRoute.GetOverrides().GetGrpcService().GetTargetSpecifier().(*envoycore.GrpcService_EnvoyGrpc_).EnvoyGrpc.GetClusterName()).To(Equal("outbound|9002||ext-proc-svc.test-namespace.svc.cluster.local"))
-		g.Expect(extProcPerRoute.GetOverrides().GetProcessingMode().GetRequestBodyMode()).To(Equal(extproc.ProcessingMode_FULL_DUPLEX_STREAMED))
+		g.Expect(extProcPerRoute.GetOverrides().GetProcessingMode().GetRequestBodyMode()).To(Equal(extproc.ProcessingMode_BUFFERED))
 		g.Expect(extProcPerRoute.GetOverrides().GetProcessingMode().GetRequestHeaderMode()).To(Equal(extproc.ProcessingMode_SEND))
-		g.Expect(extProcPerRoute.GetOverrides().GetProcessingMode().GetResponseBodyMode()).To(Equal(extproc.ProcessingMode_FULL_DUPLEX_STREAMED))
-		g.Expect(extProcPerRoute.GetOverrides().GetProcessingMode().GetResponseHeaderMode()).To(Equal(extproc.ProcessingMode_SEND))
-		g.Expect(extProcPerRoute.GetOverrides().GetFailureModeAllow().GetValue()).To(BeFalse())
-	})
-
-	t.Run("for virtual service with routing to an service with inference semantics with failuremode override", func(t *testing.T) {
-		g := NewWithT(t)
-		cg := core.NewConfigGenTest(t, core.TestOptions{})
-
-		routeOpts := buildRouteOpts(serviceRegistry, nil)
-		routeOpts.InferencePoolExtensionRefs = map[string]kube.InferencePoolRouteRuleConfig{
-			"routeA": {FQDN: "ext-proc-svc.test-namespace.svc.cluster.local", Port: "9002", FailureModeAllow: true},
-		}
-		routes, err := route.BuildHTTPRoutesForVirtualService(node(cg), virtualServicePlain, 8080, gatewayNames, routeOpts)
-		xdstest.ValidateRoutes(t, routes)
-		g.Expect(err).NotTo(HaveOccurred())
-		g.Expect(routes[0].GetTypedPerFilterConfig()).To(HaveKey(wellknown.HTTPExternalProcessing))
-		extProcPerRoute := new(extproc.ExtProcPerRoute)
-		if err := routes[0].GetTypedPerFilterConfig()[wellknown.HTTPExternalProcessing].UnmarshalTo(extProcPerRoute); err != nil {
-			t.Errorf("couldn't unmarshal any proto: %v \n", err)
-		}
-		// nolint lll
-		g.Expect(extProcPerRoute.GetOverrides().GetGrpcService().GetTargetSpecifier().(*envoycore.GrpcService_EnvoyGrpc_).EnvoyGrpc.GetClusterName()).To(Equal("outbound|9002||ext-proc-svc.test-namespace.svc.cluster.local"))
-		g.Expect(extProcPerRoute.GetOverrides().GetProcessingMode().GetRequestBodyMode()).To(Equal(extproc.ProcessingMode_FULL_DUPLEX_STREAMED))
-		g.Expect(extProcPerRoute.GetOverrides().GetProcessingMode().GetRequestHeaderMode()).To(Equal(extproc.ProcessingMode_SEND))
-		g.Expect(extProcPerRoute.GetOverrides().GetProcessingMode().GetResponseBodyMode()).To(Equal(extproc.ProcessingMode_FULL_DUPLEX_STREAMED))
-		g.Expect(extProcPerRoute.GetOverrides().GetProcessingMode().GetResponseHeaderMode()).To(Equal(extproc.ProcessingMode_SEND))
-		g.Expect(extProcPerRoute.GetOverrides().GetFailureModeAllow().GetValue()).To(BeTrue())
 	})
 	t.Run("for virtualservices with with wildcard hosts outside of the serviceregistry (on port 80)", func(t *testing.T) {
 		g := NewWithT(t)
@@ -3102,5 +3072,27 @@ func TestInboundHTTPRoute(t *testing.T) {
 				t.Errorf("error in inbound routes. Got: %v, Want: %v", inroute, tc.expected)
 			}
 		})
+	}
+}
+
+func TestCheckAndGetInferencePoolConfig(t *testing.T) {
+	virtualService := config.Config{
+		Meta: config.Meta{
+			Namespace: "test-namespace",
+		},
+		Spec: &networking.VirtualService{
+			Http: []*networking.HTTPRoute{
+				{
+					Name: "%%service-name%%8080%%route-name",
+				},
+			},
+		},
+	}
+
+	expected := "service-name.test-namespace.svc.cluster.local:8080"
+	result := route.CheckAndGetInferencePoolConfig(virtualService)
+
+	if result != expected {
+		t.Errorf("Expected %s, but got %s", expected, result)
 	}
 }

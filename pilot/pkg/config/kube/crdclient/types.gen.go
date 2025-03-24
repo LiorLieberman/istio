@@ -357,11 +357,6 @@ func updateStatus(c kube.Client, cfg config.Config, objMeta metav1.ObjectMeta) (
 			ObjectMeta: objMeta,
 			Status:     *(cfg.Status.(*sigsk8siogatewayapiinferenceextensionapiv1alpha2.InferencePoolStatus)),
 		}, metav1.UpdateOptions{})
-	case gvk.Ingress:
-		return c.Kube().NetworkingV1().Ingresses(cfg.Namespace).UpdateStatus(context.TODO(), &k8sioapinetworkingv1.Ingress{
-			ObjectMeta: objMeta,
-			Status:     *(cfg.Status.(*k8sioapinetworkingv1.IngressStatus)),
-		}, metav1.UpdateOptions{})
 	case gvk.KubernetesGateway:
 		return c.GatewayAPI().GatewayV1beta1().Gateways(cfg.Namespace).UpdateStatus(context.TODO(), &sigsk8siogatewayapiapisv1beta1.Gateway{
 			ObjectMeta: objMeta,
@@ -1172,25 +1167,6 @@ var translationMap = map[config.GroupVersionKind]func(r runtime.Object) config.C
 		return config.Config{
 			Meta: config.Meta{
 				GroupVersionKind:  gvk.HTTPRoute,
-				Name:              obj.Name,
-				Namespace:         obj.Namespace,
-				Labels:            obj.Labels,
-				Annotations:       obj.Annotations,
-				ResourceVersion:   obj.ResourceVersion,
-				CreationTimestamp: obj.CreationTimestamp.Time,
-				OwnerReferences:   obj.OwnerReferences,
-				UID:               string(obj.UID),
-				Generation:        obj.Generation,
-			},
-			Spec:   &obj.Spec,
-			Status: &obj.Status,
-		}
-	},
-	gvk.HorizontalPodAutoscaler: func(r runtime.Object) config.Config {
-		obj := r.(*k8sioapiautoscalingv2.HorizontalPodAutoscaler)
-		return config.Config{
-			Meta: config.Meta{
-				GroupVersionKind:  gvk.HorizontalPodAutoscaler,
 				Name:              obj.Name,
 				Namespace:         obj.Namespace,
 				Labels:            obj.Labels,

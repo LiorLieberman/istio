@@ -1381,7 +1381,6 @@ func istioScheme() *runtime.Scheme {
 	utilruntime.Must(gatewayapialpha3.Install(scheme))
 	utilruntime.Must(gatewayapibeta.Install(scheme))
 	utilruntime.Must(gatewayapiv1.Install(scheme))
-	utilruntime.Must(gatewayx.Install(scheme))
 	utilruntime.Must(inferencev1alpha2.AddToScheme(scheme))
 	utilruntime.Must(apiextensionsv1.AddToScheme(scheme))
 	return scheme

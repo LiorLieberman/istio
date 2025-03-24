@@ -37,7 +37,6 @@ var (
 	HTTPRoute                      = config.GroupVersionKind{Group: "gateway.networking.k8s.io", Version: "v1beta1", Kind: "HTTPRoute"}
 	HTTPRoute_v1alpha2             = config.GroupVersionKind{Group: "gateway.networking.k8s.io", Version: "v1alpha2", Kind: "HTTPRoute"}
 	HTTPRoute_v1                   = config.GroupVersionKind{Group: "gateway.networking.k8s.io", Version: "v1", Kind: "HTTPRoute"}
-	HorizontalPodAutoscaler        = config.GroupVersionKind{Group: "autoscaling", Version: "v2", Kind: "HorizontalPodAutoscaler"}
 	InferencePool                  = config.GroupVersionKind{Group: "inference.networking.x-k8s.io", Version: "v1alpha2", Kind: "InferencePool"}
 	Ingress                        = config.GroupVersionKind{Group: "networking.k8s.io", Version: "v1", Kind: "Ingress"}
 	IngressClass                   = config.GroupVersionKind{Group: "networking.k8s.io", Version: "v1", Kind: "IngressClass"}
@@ -143,8 +142,6 @@ func ToGVR(g config.GroupVersionKind) (schema.GroupVersionResource, bool) {
 		return gvr.HTTPRoute_v1alpha2, true
 	case HTTPRoute_v1:
 		return gvr.HTTPRoute_v1, true
-	case HorizontalPodAutoscaler:
-		return gvr.HorizontalPodAutoscaler, true
 	case InferencePool:
 		return gvr.InferencePool, true
 	case Ingress:
@@ -396,8 +393,6 @@ func FromGVR(g schema.GroupVersionResource) (config.GroupVersionKind, bool) {
 		return GatewayClass, true
 	case gvr.HTTPRoute:
 		return HTTPRoute, true
-	case gvr.HorizontalPodAutoscaler:
-		return HorizontalPodAutoscaler, true
 	case gvr.InferencePool:
 		return InferencePool, true
 	case gvr.Ingress:

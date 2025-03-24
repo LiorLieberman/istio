@@ -302,21 +302,6 @@ var (
 		ValidateProto: validation.EmptyValidate,
 	}.MustBuild()
 
-	HorizontalPodAutoscaler = resource.Builder{
-		Identifier: "HorizontalPodAutoscaler",
-		Group:      "autoscaling",
-		Kind:       "HorizontalPodAutoscaler",
-		Plural:     "horizontalpodautoscalers",
-		Version:    "v2",
-		Proto:      "k8s.io.api.autoscaling.v2.HorizontalPodAutoscalerSpec", StatusProto: "k8s.io.api.autoscaling.v2.HorizontalPodAutoscalerStatus",
-		ReflectType: reflect.TypeOf(&k8sioapiautoscalingv2.HorizontalPodAutoscalerSpec{}).Elem(), StatusType: reflect.TypeOf(&k8sioapiautoscalingv2.HorizontalPodAutoscalerStatus{}).Elem(),
-		ProtoPackage: "k8s.io/api/autoscaling/v2", StatusPackage: "k8s.io/api/autoscaling/v2",
-		ClusterScoped: false,
-		Synthetic:     false,
-		Builtin:       true,
-		ValidateProto: validation.EmptyValidate,
-	}.MustBuild()
-
 	InferencePool = resource.Builder{
 		Identifier: "InferencePool",
 		Group:      "inference.networking.x-k8s.io",
@@ -851,7 +836,6 @@ var (
 		MustAdd(Gateway).
 		MustAdd(GatewayClass).
 		MustAdd(HTTPRoute).
-		MustAdd(HorizontalPodAutoscaler).
 		MustAdd(InferencePool).
 		MustAdd(Ingress).
 		MustAdd(IngressClass).
@@ -900,7 +884,6 @@ var (
 		MustAdd(GRPCRoute).
 		MustAdd(GatewayClass).
 		MustAdd(HTTPRoute).
-		MustAdd(HorizontalPodAutoscaler).
 		MustAdd(InferencePool).
 		MustAdd(Ingress).
 		MustAdd(IngressClass).

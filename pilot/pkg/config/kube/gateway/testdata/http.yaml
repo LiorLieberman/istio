@@ -320,72 +320,20 @@ spec:
 apiVersion: gateway.networking.k8s.io/v1beta1
 kind: HTTPRoute
 metadata:
-  name: http-route-cors
-  namespace: default
-spec:
-  hostnames:
-  - "cors.domain.example"
-  parentRefs:
-    - name: gateway
-      namespace: istio-system
-  rules:
-    - backendRefs:
-        - kind: Service
-          name: httpbin
-          port: 80
-      filters:
-        - cors:
-            allowCredentials: true
-            allowOrigins:
-            # - '*' # This will be allowed in the future, probably https://github.com/kubernetes-sigs/gateway-api/issues/3648#issuecomment-2735208553
-            # - '*.com'
-              - "https://example.com"
-            allowMethods:
-              - GET
-              - HEAD
-              - POST
-            allowHeaders:
-              - Accept
-              - Accept-Language
-              - Content-Language
-              - Content-Type
-              - Range
-          type: CORS
----
-apiVersion: gateway.networking.k8s.io/v1beta1
-kind: HTTPRoute
-metadata:
-  name: multiple-inferencepool-backend-refs
+  name: inferencepool-backend-ref
   namespace: default
 spec:
   parentRefs:
     - name: gateway
       namespace: istio-system
-  hostnames: ["infpool-multi.domain.example"]
+  hostnames: ["infpool.domain.example"]
   rules:
     - matches:
         - path:
             type: PathPrefix
             value: /infpool
-          headers:
-          - name: my-header
-            value: some-value
-            type: Exact
       backendRefs:
         - name: infpool-gen
-          group: inference.networking.x-k8s.io
-          kind: InferencePool
-          port: 80
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /infpool
-          headers:
-          - name: my-header
-            value: some-value-2
-            type: Exact
-      backendRefs:
-        - name: infpool-gen2
           group: inference.networking.x-k8s.io
           kind: InferencePool
           port: 80

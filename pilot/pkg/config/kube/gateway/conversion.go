@@ -969,6 +969,7 @@ func buildGRPCDestination(
 	var invalidBackendErr *ConfigError
 	res := []*istio.HTTPRouteDestination{}
 	for i, fwd := range action {
+		// TODO(liorlieberman): use same httproute logic
 		dst, _, err := buildDestination(ctx, fwd.BackendRef, ns, enforceRefGrant, gvk.GRPCRoute)
 		if err != nil {
 			if isInvalidBackend(err) {
@@ -1017,13 +1018,13 @@ type inferencePoolConfig struct {
 	endpointPickerPort string
 }
 
-func buildDestination(ctx RouteContext, to k8s.BackendRef, ns string,
+func buildDestination(ctx configContext, to k8s.BackendRef, ns string,
 	enforceRefGrant bool, k config.GroupVersionKind,
 ) (*istio.Destination, *inferencePoolConfig, *ConfigError) {
 	// check if the reference is allowed
 	if enforceRefGrant {
 		if toNs := to.Namespace; toNs != nil && string(*toNs) != ns {
-			if !ctx.Grants.BackendAllowed(ctx.Krt, k, to.Name, *toNs, ns) {
+			if !refs.BackendAllowed(k, to.Name, *toNs, ns) {
 				return &istio.Destination{}, nil, &ConfigError{
 					Reason:  InvalidDestinationPermit,
 					Message: fmt.Sprintf("backendRef %v/%v not accessible to a %s in namespace %q (missing a ReferenceGrant?)", to.Name, *toNs, k.Kind, ns),
@@ -1034,12 +1035,14 @@ func buildDestination(ctx RouteContext, to k8s.BackendRef, ns string,
 
 	namespace := ptr.OrDefault((*string)(to.Namespace), ns)
 	var invalidBackendErr *ConfigError
-	var hostname string
-	ref := normalizeReference(to.Group, to.Kind, gvk.Service)
-	switch ref {
-	case gvk.Service:
+	if nilOrEqual((*string)(to.Group), "") && nilOrEqual((*string)(to.Kind), gvk.Service.Kind) {
+		// Service
+		if to.Port == nil {
+			// "Port is required when the referent is a Kubernetes Service."
+			return nil, nil, &ConfigError{Reason: InvalidDestination, Message: "port is required in backendRef"}
+		}
 		if strings.Contains(string(to.Name), ".") {
-			return nil, nil, &ConfigError{Reason: InvalidDestination, Message: "service name invalid; the name of the Service must be used, not the hostname."}
+			return nil, nil, &ConfigError{Reason: InvalidDestination, Message: "serviceName invalid; the name of the Service must be used, not the hostname."}
 		}
 		hostname = fmt.Sprintf("%s.%s.svc.%s", to.Name, namespace, ctx.DomainSuffix)
 		key := namespace + "/" + string(to.Name)
@@ -1047,25 +1050,67 @@ func buildDestination(ctx RouteContext, to k8s.BackendRef, ns string,
 		if svc == nil {
 			invalidBackendErr = &ConfigError{Reason: InvalidDestinationNotFound, Message: fmt.Sprintf("backend(%s) not found", hostname)}
 		}
-	case config.GroupVersionKind{Group: gvk.ServiceEntry.Group, Kind: "Hostname"}:
-		if to.Namespace != nil {
-			return nil, nil, &ConfigError{Reason: InvalidDestination, Message: "namespace may not be set with Hostname type"}
+		return &istio.Destination{
+			// TODO: implement ReferencePolicy for cross namespace
+			Host: hostname,
+			Port: &istio.PortSelector{Number: uint32(*to.Port)},
+		}, nil, invalidBackendErr
+	}
+	// TODO(liorlieberman): any harm to guard this as well?
+	if features.SupportGatewayAPIInferenceExtension {
+		if nilOrEqual((*string)(to.Group), gvk.InferencePool.Group) && nilOrEqual((*string)(to.Kind), gvk.InferencePool.Kind) {
+			if strings.Contains(string(to.Name), ".") {
+				return nil, nil, &ConfigError{
+					Reason:  InvalidDestination,
+					Message: "InferencePool.Name invalid; the name of the InferencePool must be used, not the hostname.",
+				}
+			}
+			inferencePoolServiceName, _ := InferencePoolServiceName(string(to.Name))
+			hostname := fmt.Sprintf("%s.%s.svc.%s", inferencePoolServiceName, namespace, ctx.Domain)
+			svc := ctx.Context.GetService(hostname, namespace)
+			if svc == nil {
+				invalidBackendErr = &ConfigError{Reason: InvalidDestinationNotFound, Message: fmt.Sprintf("backend(%s) not found", hostname)}
+				return nil, nil, invalidBackendErr
+			}
+			if svc.Attributes.Labels == nil {
+				invalidBackendErr = &ConfigError{Reason: InvalidDestination, Message: "InferencePool service invalid, extensionRef labels not found"}
+				return nil, nil, invalidBackendErr
+			}
+
+			ipCfg := &inferencePoolConfig{
+				enableExtProc: true,
+			}
+			if dst, ok := svc.Attributes.Labels[InferencePoolExtensionRefSvc]; ok {
+				ipCfg.endpointPickerDst = dst
+			}
+			if p, ok := svc.Attributes.Labels[InferencePoolExtensionRefPort]; ok {
+				ipCfg.endpointPickerPort = p
+			}
+			if ipCfg.endpointPickerDst == "" || ipCfg.endpointPickerPort == "" {
+				invalidBackendErr = &ConfigError{Reason: InvalidDestination, Message: "InferencePool service invalid, extensionRef labels not found"}
+			}
+			return &istio.Destination{
+				Host: hostname,
+				// Port: &istio.PortSelector{Number: uint32(*to.Port)},
+			}, ipCfg, invalidBackendErr
 		}
-		hostname = string(to.Name)
-		if ctx.LookupHostname(hostname, namespace) == nil {
-			invalidBackendErr = &ConfigError{Reason: InvalidDestinationNotFound, Message: fmt.Sprintf("backend(%s) not found", hostname)}
-		}
-	case config.GroupVersionKind{Group: features.MCSAPIGroup, Kind: "ServiceImport"}:
-		hostname = fmt.Sprintf("%s.%s.svc.clusterset.local", to.Name, namespace)
+	}
+	if nilOrEqual((*string)(to.Group), features.MCSAPIGroup) && nilOrEqual((*string)(to.Kind), "ServiceImport") {
+		// Service import
+		hostname := fmt.Sprintf("%s.%s.svc.clusterset.local", to.Name, namespace)
 		if !features.EnableMCSHost {
 			// They asked for ServiceImport, but actually don't have full support enabled...
 			// No problem, we can just treat it as Service, which is already cross-cluster in this mode anyways
 			hostname = fmt.Sprintf("%s.%s.svc.%s", to.Name, namespace, ctx.DomainSuffix)
 		}
-		// TODO: currently we are always looking for Service. We should be looking for ServiceImport when features.EnableMCSHost
-		key := namespace + "/" + string(to.Name)
-		svc := ptr.Flatten(krt.FetchOne(ctx.Krt, ctx.Services, krt.FilterKey(key)))
-		if svc == nil {
+		if to.Port == nil {
+			// We don't know where to send without port
+			return nil, nil, &ConfigError{Reason: InvalidDestination, Message: "port is required in backendRef"}
+		}
+		if strings.Contains(string(to.Name), ".") {
+			return nil, nil, &ConfigError{Reason: InvalidDestination, Message: "serviceName invalid; the name of the Service must be used, not the hostname."}
+		}
+		if ctx.Context.GetService(hostname, namespace) == nil {
 			invalidBackendErr = &ConfigError{Reason: InvalidDestinationNotFound, Message: fmt.Sprintf("backend(%s) not found", hostname)}
 		}
 	case gvk.InferencePool:
@@ -1101,19 +1146,30 @@ func buildDestination(ctx RouteContext, to k8s.BackendRef, ns string,
 		}
 		return &istio.Destination{
 			Host: hostname,
-			// Port: &istio.PortSelector{Number: uint32(*to.Port)},
-		}, ipCfg, invalidBackendErr
-	default:
-		return &istio.Destination{}, nil, &ConfigError{
-			Reason:  InvalidDestinationKind,
-			Message: fmt.Sprintf("referencing unsupported backendRef: group %q kind %q", ptr.OrEmpty(to.Group), ptr.OrEmpty(to.Kind)),
-		}
+			Port: &istio.PortSelector{Number: uint32(*to.Port)},
+		}, nil, invalidBackendErr
 	}
-	// All types currently require a Port, so we do this for everything; consider making this per-type if we have future types
-	// that do not require port.
-	if to.Port == nil {
-		// "Port is required when the referent is a Kubernetes Service."
-		return nil, nil, &ConfigError{Reason: InvalidDestination, Message: "port is required in backendRef"}
+	if nilOrEqual((*string)(to.Group), gvk.ServiceEntry.Group) && nilOrEqual((*string)(to.Kind), "Hostname") {
+		// Hostname synthetic type
+		if to.Port == nil {
+			// We don't know where to send without port
+			return nil, nil, &ConfigError{Reason: InvalidDestination, Message: "port is required in backendRef"}
+		}
+		if to.Namespace != nil {
+			return nil, nil, &ConfigError{Reason: InvalidDestination, Message: "namespace may not be set with Hostname type"}
+		}
+		hostname := string(to.Name)
+		if ctx.Context.GetService(hostname, namespace) == nil {
+			invalidBackendErr = &ConfigError{Reason: InvalidDestinationNotFound, Message: fmt.Sprintf("backend(%s) not found", hostname)}
+		}
+		return &istio.Destination{
+			Host: string(to.Name),
+			Port: &istio.PortSelector{Number: uint32(*to.Port)},
+		}, nil, invalidBackendErr
+	}
+	return &istio.Destination{}, nil, &ConfigError{
+		Reason:  InvalidDestinationKind,
+		Message: fmt.Sprintf("referencing unsupported backendRef: group %q kind %q", ptr.OrEmpty(to.Group), ptr.OrEmpty(to.Kind)),
 	}
 	return &istio.Destination{
 		Host: hostname,

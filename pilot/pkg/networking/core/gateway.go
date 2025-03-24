@@ -443,7 +443,7 @@ func (configgen *ConfigGeneratorImpl) buildGatewayHTTPRouteConfig(node *model.Pr
 				gatewayRoutes[gatewayName] = make(map[string][]*route.Route)
 			}
 
-			infPoolConfigs := istio_route.CheckAndGetInferencePoolConfigs(virtualService)
+			infPoolConfig := istio_route.CheckAndGetInferencePoolConfig(virtualService)
 
 			vskey := virtualService.Name + "/" + virtualService.Namespace
 
@@ -460,7 +460,7 @@ func (configgen *ConfigGeneratorImpl) buildGatewayHTTPRouteConfig(node *model.Pr
 					LookupHash: func(destination *networking.HTTPRouteDestination) *networking.LoadBalancerSettings_ConsistentHashLB {
 						return hashByDestination[destination]
 					},
-					InferencePoolExtensionRefs: infPoolConfigs,
+					InferencePoolExtensionRef: infPoolConfig,
 				}
 				routes, err = istio_route.BuildHTTPRoutesForVirtualService(node, virtualService, port, sets.New(gatewayName), opts)
 				if err != nil {

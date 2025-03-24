@@ -196,12 +196,6 @@ var (
 	UnifiedSidecarScoping = env.Register("PILOT_UNIFIED_SIDECAR_SCOPE", true,
 		"If true, unified SidecarScope creation will be used. This is only intended as a temporary feature flag for backwards compatibility.").Get()
 
-	CACertConfigMapName = env.Register("PILOT_CA_CERT_CONFIGMAP", "istio-ca-root-cert",
-		"The name of the ConfigMap that stores the Root CA Certificate that is used by istiod").Get()
-
-	EnvoyStatusPortEnableProxyProtocol = env.Register("ENVOY_STATUS_PORT_ENABLE_PROXY_PROTOCOL", false,
-		"If enabled, Envoy will support requests with proxy protocol on its status port").Get()
-
 	// If the version of this is merged to main - it should be false by default.
 	SupportGatewayAPIInferenceExtension = env.Register("SUPPORT_GATEWAY_API_INFERENCE_EXTENSION", true,
 		"If true, support gateway inference extensions apis").Get()

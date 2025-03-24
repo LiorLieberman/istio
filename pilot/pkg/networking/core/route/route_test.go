@@ -1269,9 +1269,7 @@ func TestBuildHTTPRoutes(t *testing.T) {
 		cg := core.NewConfigGenTest(t, core.TestOptions{})
 
 		routeOpts := buildRouteOpts(serviceRegistry, nil)
-		routeOpts.InferencePoolExtensionRefs = map[string]string{
-			"routeA": "ext-proc-svc.test-namespace.svc.cluster.local:9002",
-		}
+		routeOpts.InferencePoolExtensionRef = "ext-proc-svc.test-namespace.svc.cluster.local:9002"
 		routes, err := route.BuildHTTPRoutesForVirtualService(node(cg), virtualServicePlain, 8080, gatewayNames, routeOpts)
 		xdstest.ValidateRoutes(t, routes)
 		g.Expect(err).NotTo(HaveOccurred())
@@ -1282,10 +1280,8 @@ func TestBuildHTTPRoutes(t *testing.T) {
 		}
 		// nolint lll
 		g.Expect(extProcPerRoute.GetOverrides().GetGrpcService().GetTargetSpecifier().(*envoycore.GrpcService_EnvoyGrpc_).EnvoyGrpc.GetClusterName()).To(Equal("outbound|9002||ext-proc-svc.test-namespace.svc.cluster.local"))
-		g.Expect(extProcPerRoute.GetOverrides().GetProcessingMode().GetRequestBodyMode()).To(Equal(extproc.ProcessingMode_FULL_DUPLEX_STREAMED))
+		g.Expect(extProcPerRoute.GetOverrides().GetProcessingMode().GetRequestBodyMode()).To(Equal(extproc.ProcessingMode_BUFFERED))
 		g.Expect(extProcPerRoute.GetOverrides().GetProcessingMode().GetRequestHeaderMode()).To(Equal(extproc.ProcessingMode_SEND))
-		g.Expect(extProcPerRoute.GetOverrides().GetProcessingMode().GetResponseBodyMode()).To(Equal(extproc.ProcessingMode_FULL_DUPLEX_STREAMED))
-		g.Expect(extProcPerRoute.GetOverrides().GetProcessingMode().GetResponseHeaderMode()).To(Equal(extproc.ProcessingMode_SEND))
 	})
 	t.Run("for virtualservices with with wildcard hosts outside of the serviceregistry (on port 80)", func(t *testing.T) {
 		g := NewWithT(t)
@@ -3092,11 +3088,10 @@ func TestCheckAndGetInferencePoolConfig(t *testing.T) {
 		},
 	}
 
-	expected := map[string]string{}
-	expected["%%service-name%%8080%%route-name"] = "service-name.test-namespace.svc.cluster.local:8080"
-	result := route.CheckAndGetInferencePoolConfigs(virtualService)
+	expected := "service-name.test-namespace.svc.cluster.local:8080"
+	result := route.CheckAndGetInferencePoolConfig(virtualService)
 
-	if !reflect.DeepEqual(result, expected) {
+	if result != expected {
 		t.Errorf("Expected %s, but got %s", expected, result)
 	}
 }

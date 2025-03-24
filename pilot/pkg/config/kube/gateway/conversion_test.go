@@ -118,18 +118,6 @@ var services = []*model.Service{
 	},
 	{
 		Attributes: model.ServiceAttributes{
-			Namespace: "default",
-			Labels: map[string]string{
-				InferencePoolExtensionRefSvc:  "ext-proc-svc-2",
-				InferencePoolExtensionRefPort: "9002",
-			},
-		},
-		Ports:    ports,
-		Hostname: host.Name(fmt.Sprintf("%s.default.svc.domain.suffix", firstValue(InferencePoolServiceName("infpool-gen2")))),
-	},
-
-	{
-		Attributes: model.ServiceAttributes{
 			Namespace: "apple",
 		},
 		Ports:    ports,
@@ -1678,6 +1666,10 @@ func kubernetesObjectsFromString(s string) ([]runtime.Object, error) {
 		objects = append(objects, o)
 	}
 	return objects, nil
+}
+
+func firstValue[T, U any](val T, _ U) T {
+	return val
 }
 
 func firstValue[T, U any](val T, _ U) T {

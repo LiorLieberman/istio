@@ -1269,7 +1269,9 @@ func TestBuildHTTPRoutes(t *testing.T) {
 		cg := core.NewConfigGenTest(t, core.TestOptions{})
 
 		routeOpts := buildRouteOpts(serviceRegistry, nil)
-		routeOpts.InferencePoolExtensionRef = "ext-proc-svc.test-namespace.svc.cluster.local:9002"
+		routeOpts.InferencePoolExtensionRefs = map[string]string{
+			"routeA": "ext-proc-svc.test-namespace.svc.cluster.local:9002",
+		}
 		routes, err := route.BuildHTTPRoutesForVirtualService(node(cg), virtualServicePlain, 8080, gatewayNames, routeOpts)
 		xdstest.ValidateRoutes(t, routes)
 		g.Expect(err).NotTo(HaveOccurred())
@@ -3088,10 +3090,11 @@ func TestCheckAndGetInferencePoolConfig(t *testing.T) {
 		},
 	}
 
-	expected := "service-name.test-namespace.svc.cluster.local:8080"
-	result := route.CheckAndGetInferencePoolConfig(virtualService)
+	expected := map[string]string{}
+	expected["%%service-name%%8080%%route-name"] = "service-name.test-namespace.svc.cluster.local:8080"
+	result := route.CheckAndGetInferencePoolConfigs(virtualService)
 
-	if result != expected {
+	if !reflect.DeepEqual(result, expected) {
 		t.Errorf("Expected %s, but got %s", expected, result)
 	}
 }

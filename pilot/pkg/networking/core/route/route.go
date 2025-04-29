@@ -522,11 +522,11 @@ func TranslateRoute(
 								ClusterName: model.BuildSubsetKey(model.TrafficDirectionOutbound, "", host.Name(extSvc), int(p)),
 							},
 						},
-					},
-					ProcessingMode: &extproc.ProcessingMode{
-						RequestHeaderMode: extproc.ProcessingMode_SEND,
-						// open AI standard includes the model and other information the ext_proc server needs in the request body
-						RequestBodyMode: extproc.ProcessingMode_BUFFERED,
+						ProcessingMode: &extproc.ProcessingMode{
+							RequestHeaderMode: extproc.ProcessingMode_SEND,
+							// open AI standard includes the model and other information the ext_proc server needs in the request body
+							RequestBodyMode: extproc.ProcessingMode_FULL_DUPLEX_STREAMED,
+						},
 					},
 				},
 			},

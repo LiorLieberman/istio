@@ -114,20 +114,6 @@ type Config struct {
 	Extra map[string]any
 }
 
-type ObjectWithCluster[T any] struct {
-	ClusterID cluster.ID
-	Object    *T
-}
-
-// We can't refer to krt directly without causing an import cycle, but this function
-// implements an interface that allows the krt helper to know how to get the object key
-func (o ObjectWithCluster[T]) GetObjectKeyable() any {
-	if o.Object == nil {
-		return nil
-	}
-	return *o.Object
-}
-
 func LabelsInRevision(lbls map[string]string, rev string) bool {
 	configEnv, f := lbls[label.IoIstioRev.Name]
 	if !f {
@@ -410,8 +396,7 @@ func (c *Config) Equals(other *Config) bool {
 	if !equals(c.Status, other.Status) {
 		return false
 	}
-	// Can't use map.Equal because store maps as the value
-	if !equals(c.Extra, other.Extra) {
+	if !maps.Equal(c.Extra, other.Extra) {
 		return false
 	}
 	return true

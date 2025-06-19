@@ -18,7 +18,6 @@ package kube
 // This data is stored in the `Extra` field of a `config.Config` for a VirtualService.
 // The map is keyed by the `HTTPRoute.Name`.
 type InferencePoolRouteRuleConfig struct {
-	FQDN             string
-	Port             string
-	FailureModeAllow bool
+	FQDN string
+	Port string
 }

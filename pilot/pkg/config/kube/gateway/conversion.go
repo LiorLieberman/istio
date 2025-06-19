@@ -228,9 +228,6 @@ func convertHTTPRoute(ctx RouteContext, r k8s.HTTPRouteRule,
 		if err != nil {
 			return nil, nil, err
 		}
-		if ipCfg != nil && ipCfg.enableExtProc {
-			vs.Name = "%%" + ipCfg.endpointPickerDst + "%%" + ipCfg.endpointPickerPort + "%%" + vs.Name
-		}
 		vs.Route = route
 		return vs, ipCfg, joinErrors(backendErr, mirrorBackendErr)
 	}

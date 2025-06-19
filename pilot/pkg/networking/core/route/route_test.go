@@ -1270,7 +1270,9 @@ func TestBuildHTTPRoutes(t *testing.T) {
 		cg := core.NewConfigGenTest(t, core.TestOptions{})
 
 		routeOpts := buildRouteOpts(serviceRegistry, nil)
-		routeOpts.InferencePoolExtensionRef = "ext-proc-svc.test-namespace.svc.cluster.local:9002"
+		routeOpts.InferencePoolExtensionRefs = map[string]kube.InferencePoolRouteRuleConfig{
+			"routeA": {FQDN: "ext-proc-svc.test-namespace.svc.cluster.local", Port: "9002"},
+		}
 		routes, err := route.BuildHTTPRoutesForVirtualService(node(cg), virtualServicePlain, 8080, gatewayNames, routeOpts)
 		xdstest.ValidateRoutes(t, routes)
 		g.Expect(err).NotTo(HaveOccurred())
@@ -3078,19 +3080,23 @@ func TestInboundHTTPRoute(t *testing.T) {
 func TestCheckAndGetInferencePoolConfig(t *testing.T) {
 	virtualService := config.Config{
 		Meta: config.Meta{
-			Namespace: "test-namespace",
+			Namespace: "default",
+			Name:      "vs-with-inference",
 		},
-		Spec: &networking.VirtualService{
-			Http: []*networking.HTTPRoute{
-				{
-					Name: "%%service-name%%8080%%route-name",
-				},
+		Spec: &networking.VirtualService{}, // Spec content doesn't matter for this test
+		Extra: map[string]any{
+			constants.ConfigExtraPerRouteRuleInferencePoolConfigs: map[string]kube.InferencePoolRouteRuleConfig{
+				"route-for-pool1": {FQDN: "pool1.default.svc.cluster.local", Port: "8001"},
+				"route-for-pool2": {FQDN: "pool2.default.svc.cluster.local", Port: "8002"},
 			},
 		},
 	}
 
-	expected := "service-name.test-namespace.svc.cluster.local:8080"
-	result := route.CheckAndGetInferencePoolConfig(virtualService)
+	expected := map[string]kube.InferencePoolRouteRuleConfig{
+		"route-for-pool1": {FQDN: "pool1.default.svc.cluster.local", Port: "8001"},
+		"route-for-pool2": {FQDN: "pool2.default.svc.cluster.local", Port: "8002"},
+	}
+	result := route.CheckAndGetInferencePoolConfigs(virtualService)
 
 	if result != expected {
 		t.Errorf("Expected %s, but got %s", expected, result)

@@ -127,12 +127,11 @@ type TypedResource struct {
 }
 
 type Outputs struct {
-	Gateways                krt.Collection[Gateway]
-	VirtualServices         krt.Collection[*config.Config]
-	ReferenceGrants         ReferenceGrants
-	DestinationRules        krt.Collection[*config.Config]
-	InferencePools          krt.Collection[InferencePool]
-	InferencePoolsByGateway krt.Index[types.NamespacedName, InferencePool]
+	Gateways         krt.Collection[Gateway]
+	VirtualServices  krt.Collection[*config.Config]
+	ReferenceGrants  ReferenceGrants
+	DestinationRules krt.Collection[*config.Config]
+	InferencePools   krt.Collection[InferencePool]
 }
 
 type Inputs struct {
@@ -230,6 +229,13 @@ func NewController(
 		inputs.InferencePools = krt.NewStaticCollection[*inferencev1alpha2.InferencePool](nil, nil, opts.WithName("disable/InferencePools")...)
 	}
 
+	if features.SupportGatewayAPIInferenceExtension {
+		inputs.InferencePools = buildClient[*inferencev1alpha2.InferencePool](c, kc, gvr.InferencePool, opts, "informer/InferencePools")
+	} else {
+		// If disabled, still build a collection but make it always empty
+		inputs.InferencePools = krt.NewStaticCollection[*inferencev1alpha2.InferencePool](nil, nil, opts.WithName("disable/InferencePools")...)
+	}
+
 	references := NewReferenceSet(
 		AddReference(inputs.Services),
 		AddReference(inputs.ConfigMaps),
@@ -238,20 +244,31 @@ func NewController(
 
 	handlers := []krt.HandlerRegistration{}
 
-	httpRoutesByInferencePool := krt.NewIndex(inputs.HTTPRoutes, "inferencepool-route", indexHTTPRouteByInferencePool)
+	httpRoutesByNamespace := krt.NewNamespaceIndex(inputs.HTTPRoutes)
 
 	GatewayClassStatus, GatewayClasses := GatewayClassesCollection(inputs.GatewayClasses, opts)
 	status.RegisterStatus(c.status, GatewayClassStatus, GetStatus)
 
 	ReferenceGrants := BuildReferenceGrants(ReferenceGrantsCollection(inputs.ReferenceGrants, opts))
-	ListenerSetStatus, ListenerSets := ListenerSetCollection(
-		inputs.ListenerSets,
+
+	DestinationRules := DestinationRuleCollection(
+		inputs.BackendTrafficPolicy,
+		inputs.BackendTLSPolicies,
+		references,
+		c.domainSuffix,
+		c,
+		opts,
+	)
+
+	// GatewaysStatus is not fully complete until its join with route attachments to report attachedRoutes.
+	// Do not register yet.
+	GatewaysStatus, Gateways := GatewayCollection(
 		inputs.Gateways,
 		GatewayClasses,
 		inputs.Namespaces,
 		ReferenceGrants,
 		inputs.Secrets,
-		options.DomainSuffix,
+		c.domainSuffix,
 		c.gatewayContext,
 		c.tagWatcher,
 		opts,
@@ -288,6 +305,23 @@ func NewController(
 		inputs.HTTPRoutes,
 		inputs.Gateways,
 		httpRoutesByInferencePool,
+		c,
+		opts,
+	)
+
+	// Create a queue for handling service updates.
+	c.shadowServiceReconciler = controllers.NewQueue("inference pool shadow service reconciler",
+		controllers.WithReconciler(c.reconcileShadowService(InferencePools, inputs.Services)),
+		controllers.WithMaxAttempts(5))
+
+	status.RegisterStatus(c.status, InferencePoolStatus, GetStatus)
+
+	InferencePoolStatus, InferencePools := InferencePoolCollection(
+		inputs.InferencePools,
+		inputs.Services,
+		inputs.HTTPRoutes,
+		inputs.Gateways,
+		httpRoutesByNamespace,
 		c,
 		opts,
 	)
@@ -361,12 +395,11 @@ func NewController(
 	})
 
 	outputs := Outputs{
-		ReferenceGrants:         ReferenceGrants,
-		Gateways:                Gateways,
-		VirtualServices:         VirtualServices,
-		DestinationRules:        DestinationRules,
-		InferencePools:          InferencePools,
-		InferencePoolsByGateway: InferencePoolsByGateway,
+		ReferenceGrants:  ReferenceGrants,
+		Gateways:         Gateways,
+		VirtualServices:  VirtualServices,
+		DestinationRules: DestinationRules,
+		InferencePools:   InferencePools,
 	}
 	c.outputs = outputs
 

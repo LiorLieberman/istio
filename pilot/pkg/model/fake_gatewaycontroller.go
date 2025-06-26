@@ -18,7 +18,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	"istio.io/istio/pilot/pkg/model/credentials"
-	"istio.io/istio/pkg/config"
 	"istio.io/istio/pkg/util/sets"
 )
 
@@ -34,7 +33,7 @@ func (f FakeController) HasInferencePool(gw types.NamespacedName) bool {
 func (f FakeController) Reconcile(_ *PushContext) {}
 
 // NOTE: To simplify test setup, if CredentialName contains 'allowed-ns', always return true.
-func (f FakeController) SecretAllowed(_ config.GroupVersionKind, resourceName string, namespace string) bool {
+func (f FakeController) SecretAllowed(resourceName string, namespace string) bool {
 	parse, err := credentials.ParseResourceName(resourceName, namespace, "", "")
 	if err != nil {
 		return false
